@@ -48,6 +48,59 @@ def get_prompt_from_conditioning(conditioning):
     return ""
 
 
+def get_sampler_info(sampler):
+    """Extract sampler, scheduler, and steps from SAMPLER type object."""
+    if sampler is None:
+        return None, None, None
+    
+    sampler_name = None
+    scheduler_name = None
+    steps = None
+    
+    # Try common attributes
+    if hasattr(sampler, 'sampler'):
+        sampler_name = str(sampler.sampler) if sampler.sampler else None
+    if hasattr(sampler, 'scheduler'):
+        scheduler_name = str(sampler.scheduler) if sampler.scheduler else None
+    if hasattr(sampler, 'steps'):
+        steps = int(sampler.steps) if sampler.steps else None
+    
+    # Try alternative attribute names
+    if not sampler_name:
+        for attr in ['sampler_name', 'name', 'method']:
+            if hasattr(sampler, attr):
+                sampler_name = str(getattr(sampler, attr))
+                break
+    
+    if not scheduler_name:
+        for attr in ['scheduler_name', 'scheduling_method']:
+            if hasattr(sampler, attr):
+                scheduler_name = str(getattr(sampler, attr))
+                break
+    
+    # Try accessing inner objects
+    if hasattr(sampler, 'sampler_name'):
+        sampler_name = str(sampler.sampler_name) if sampler.sampler_name else None
+    
+    # Get class name as fallback
+    if not sampler_name:
+        sampler_name = sampler.__class__.__name__ if hasattr(sampler, '__class__') else None
+    
+    return sampler_name, scheduler_name, steps
+
+
+def get_image_dimensions(image):
+    """Extract width and height from IMAGE tensor."""
+    if image is None:
+        return None, None
+    # IMAGE tensor shape is typically (batch, height, width, channels)
+    if len(image.shape) >= 3:
+        height = int(image.shape[1]) if image.shape[1] > 0 else None
+        width = int(image.shape[2]) if image.shape[2] > 0 else None
+        return width, height
+    return None, None
+
+
 class ManualMetadataEnhancer:
     """
     Node that adds metadata to an image to enhance/override SaveImage node metadata.
@@ -62,6 +115,7 @@ class ManualMetadataEnhancer:
             },
             "optional": {
                 "model": ("MODEL",),
+                "sampler": ("SAMPLER",),
                 "positive_conditioning": ("CONDITIONING",),
                 "negative_conditioning": ("CONDITIONING",),
                 "positive_prompt": ("STRING", {"default": "", "multiline": True}),
@@ -69,11 +123,11 @@ class ManualMetadataEnhancer:
                 "seed": ("INT", {"default": -1, "min": -1, "max": 0xffffffffffffffff}),
                 "scheduler": ("STRING", {"default": ""}),
                 "sampler_name": ("STRING", {"default": ""}),
-                "steps": ("INT", {"default": 20, "min": 1, "max": 1000}),
+                "steps": ("INT", {"default": 0, "min": 0, "max": 1000}),
                 "model_name": ("STRING", {"default": ""}),
-                "cfg_scale": ("FLOAT", {"default": 7.0, "min": 0.0, "max": 30.0}),
-                "width": ("INT", {"default": 512, "min": 1}),
-                "height": ("INT", {"default": 512, "min": 1}),
+                "cfg_scale": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 30.0}),
+                "width": ("INT", {"default": 0, "min": 0}),
+                "height": ("INT", {"default": 0, "min": 0}),
             }
         }
     
@@ -81,9 +135,9 @@ class ManualMetadataEnhancer:
     FUNCTION = "enhance_metadata"
     CATEGORY = "image/manual_metadata"
     
-    def enhance_metadata(self, image, model=None, positive_conditioning=None, negative_conditioning=None, 
+    def enhance_metadata(self, image, model=None, sampler=None, positive_conditioning=None, negative_conditioning=None, 
                         positive_prompt="", negative_prompt="", seed=-1, scheduler="", sampler_name="", 
-                        steps=20, model_name="", cfg_scale=7.0, width=512, height=512):
+                        steps=0, model_name="", cfg_scale=0.0, width=0, height=0):
         """
         Add metadata to the image. The metadata will be embedded in the image
         using PNG metadata format, which should be preserved when SaveImage saves it.
@@ -92,6 +146,12 @@ class ManualMetadataEnhancer:
         import torch
         import numpy as np
         import tempfile
+        
+        # Extract sampler info if provided
+        auto_sampler_name, auto_scheduler, auto_steps = get_sampler_info(sampler)
+        
+        # Auto-detect width/height from first image
+        auto_width, auto_height = get_image_dimensions(image[0] if len(image) > 0 else None)
         
         # Process all images in the batch
         images_out = []
@@ -129,15 +189,21 @@ class ManualMetadataEnhancer:
             if seed != -1:
                 metadata["seed"] = str(seed)
             
-            if scheduler:
-                metadata["scheduler"] = scheduler
+            # Use manual scheduler if provided, otherwise use auto-detected
+            final_scheduler = scheduler if scheduler else (auto_scheduler if auto_scheduler else "")
+            if final_scheduler:
+                metadata["scheduler"] = final_scheduler
             
-            if sampler_name:
-                metadata["sampler"] = sampler_name
-                metadata["sampler_name"] = sampler_name
+            # Use manual sampler_name if provided, otherwise use auto-detected
+            final_sampler_name = sampler_name if sampler_name else (auto_sampler_name if auto_sampler_name else "")
+            if final_sampler_name:
+                metadata["sampler"] = final_sampler_name
+                metadata["sampler_name"] = final_sampler_name
             
-            if steps:
-                metadata["steps"] = str(steps)
+            # Use manual steps if provided (> 0), otherwise use auto-detected
+            final_steps = steps if steps > 0 else (auto_steps if auto_steps else 0)
+            if final_steps and final_steps > 0:
+                metadata["steps"] = str(final_steps)
             
             # Extract model name from MODEL input if provided, otherwise use string input
             final_model_name = model_name
@@ -150,14 +216,19 @@ class ManualMetadataEnhancer:
                 metadata["model"] = final_model_name
                 metadata["model_name"] = final_model_name
             
-            if cfg_scale:
+            # Use manual cfg_scale if provided (> 0)
+            if cfg_scale and cfg_scale > 0:
                 metadata["cfg_scale"] = str(cfg_scale)
             
-            if width:
-                metadata["width"] = str(width)
+            # Use manual width if provided (> 0), otherwise use auto-detected
+            final_width = width if width > 0 else (auto_width if auto_width else 0)
+            if final_width and final_width > 0:
+                metadata["width"] = str(final_width)
             
-            if height:
-                metadata["height"] = str(height)
+            # Use manual height if provided (> 0), otherwise use auto-detected
+            final_height = height if height > 0 else (auto_height if auto_height else 0)
+            if final_height and final_height > 0:
+                metadata["height"] = str(final_height)
             
             # Create workflow parameters dictionary for ComfyUI compatibility
             workflow_params = {}
@@ -234,6 +305,7 @@ class ManualSaveImage:
             },
             "optional": {
                 "model": ("MODEL",),
+                "sampler": ("SAMPLER",),
                 "positive_conditioning": ("CONDITIONING",),
                 "negative_conditioning": ("CONDITIONING",),
                 "positive_prompt": ("STRING", {"default": "", "multiline": True}),
@@ -241,10 +313,10 @@ class ManualSaveImage:
                 "seed": ("INT", {"default": -1, "min": -1, "max": 0xffffffffffffffff}),
                 "scheduler": ("STRING", {"default": ""}),
                 "sampler_name": ("STRING", {"default": ""}),
-                "steps": ("INT", {"default": 20, "min": 1, "max": 1000}),
-                "cfg_scale": ("FLOAT", {"default": 7.0, "min": 0.0, "max": 30.0}),
-                "width": ("INT", {"default": 512, "min": 1}),
-                "height": ("INT", {"default": 512, "min": 1}),
+                "steps": ("INT", {"default": 0, "min": 0, "max": 1000}),
+                "cfg_scale": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 30.0}),
+                "width": ("INT", {"default": 0, "min": 0}),
+                "height": ("INT", {"default": 0, "min": 0}),
             }
         }
     
@@ -253,15 +325,21 @@ class ManualSaveImage:
     OUTPUT_NODE = True
     CATEGORY = "image/manual_metadata"
     
-    def save_images(self, images, filename_prefix="ComfyUI", model=None, positive_conditioning=None, 
+    def save_images(self, images, filename_prefix="ComfyUI", model=None, sampler=None, positive_conditioning=None, 
                    negative_conditioning=None, positive_prompt="", negative_prompt="", seed=-1, 
-                   scheduler="", sampler_name="", steps=20, cfg_scale=7.0, width=512, height=512):
+                   scheduler="", sampler_name="", steps=0, cfg_scale=0.0, width=0, height=0):
         """
         Save images with manually specified metadata.
         """
         import torch
         import numpy as np
         import datetime
+        
+        # Extract sampler info if provided
+        auto_sampler_name, auto_scheduler, auto_steps = get_sampler_info(sampler)
+        
+        # Auto-detect width/height from first image
+        auto_width, auto_height = get_image_dimensions(images[0] if len(images) > 0 else None)
         
         # Get output directory
         output_dir = folder_paths.get_output_directory()
@@ -309,15 +387,21 @@ class ManualSaveImage:
             if seed != -1:
                 metadata.add_text("seed", str(seed))
             
-            if scheduler:
-                metadata.add_text("scheduler", scheduler)
+            # Use manual scheduler if provided, otherwise use auto-detected
+            final_scheduler = scheduler if scheduler else (auto_scheduler if auto_scheduler else "")
+            if final_scheduler:
+                metadata.add_text("scheduler", final_scheduler)
             
-            if sampler_name:
-                metadata.add_text("sampler", sampler_name)
-                metadata.add_text("sampler_name", sampler_name)
+            # Use manual sampler_name if provided, otherwise use auto-detected
+            final_sampler_name = sampler_name if sampler_name else (auto_sampler_name if auto_sampler_name else "")
+            if final_sampler_name:
+                metadata.add_text("sampler", final_sampler_name)
+                metadata.add_text("sampler_name", final_sampler_name)
             
-            if steps:
-                metadata.add_text("steps", str(steps))
+            # Use manual steps if provided (> 0), otherwise use auto-detected
+            final_steps = steps if steps > 0 else (auto_steps if auto_steps else 0)
+            if final_steps and final_steps > 0:
+                metadata.add_text("steps", str(final_steps))
             
             # Extract model name from MODEL input if provided
             final_model_name = ""
@@ -330,14 +414,19 @@ class ManualSaveImage:
                 metadata.add_text("model", final_model_name)
                 metadata.add_text("model_name", final_model_name)
             
-            if cfg_scale:
+            # Use manual cfg_scale if provided (> 0)
+            if cfg_scale and cfg_scale > 0:
                 metadata.add_text("cfg_scale", str(cfg_scale))
             
-            if width:
-                metadata.add_text("width", str(width))
+            # Use manual width if provided (> 0), otherwise use auto-detected
+            final_width = width if width > 0 else (auto_width if auto_width else 0)
+            if final_width and final_width > 0:
+                metadata.add_text("width", str(final_width))
             
-            if height:
-                metadata.add_text("height", str(height))
+            # Use manual height if provided (> 0), otherwise use auto-detected
+            final_height = height if height > 0 else (auto_height if auto_height else 0)
+            if final_height and final_height > 0:
+                metadata.add_text("height", str(final_height))
             
             # Add workflow parameters for ComfyUI compatibility
             workflow_params = {}
@@ -347,20 +436,20 @@ class ManualSaveImage:
                 workflow_params["negative"] = final_negative_prompt
             if seed != -1:
                 workflow_params["seed"] = seed
-            if scheduler:
-                workflow_params["scheduler"] = scheduler
-            if steps:
-                workflow_params["steps"] = steps
+            if final_scheduler:
+                workflow_params["scheduler"] = final_scheduler
+            if final_steps and final_steps > 0:
+                workflow_params["steps"] = final_steps
             if final_model_name:
                 workflow_params["model"] = final_model_name
-            if cfg_scale:
+            if cfg_scale and cfg_scale > 0:
                 workflow_params["cfg"] = cfg_scale
-            if width:
-                workflow_params["width"] = width
-            if height:
-                workflow_params["height"] = height
-            if sampler_name:
-                workflow_params["sampler_name"] = sampler_name
+            if final_width and final_width > 0:
+                workflow_params["width"] = final_width
+            if final_height and final_height > 0:
+                workflow_params["height"] = final_height
+            if final_sampler_name:
+                workflow_params["sampler_name"] = final_sampler_name
             
             if workflow_params:
                 metadata.add_text("workflow", json.dumps(workflow_params))
