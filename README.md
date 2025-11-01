@@ -1,3 +1,5 @@
+# Fair warning, this is AI slop and does not work.
+
 # ComfyUI Manual Metadata Plugin
 
 A ComfyUI plugin that allows manual input and override of image metadata including prompts, seed, scheduler, steps, model name, and other relevant generation parameters.
