@@ -234,17 +234,17 @@ class ManualSaveImage:
             },
             "optional": {
                 "model": ("MODEL",),
-                "clip": ("CLIP",),
+                "positive_conditioning": ("CONDITIONING",),
+                "negative_conditioning": ("CONDITIONING",),
                 "positive_prompt": ("STRING", {"default": "", "multiline": True}),
                 "negative_prompt": ("STRING", {"default": "", "multiline": True}),
                 "seed": ("INT", {"default": -1, "min": -1, "max": 0xffffffffffffffff}),
                 "scheduler": ("STRING", {"default": ""}),
+                "sampler_name": ("STRING", {"default": ""}),
                 "steps": ("INT", {"default": 20, "min": 1, "max": 1000}),
-                "model_name": ("STRING", {"default": ""}),
                 "cfg_scale": ("FLOAT", {"default": 7.0, "min": 0.0, "max": 30.0}),
                 "width": ("INT", {"default": 512, "min": 1}),
                 "height": ("INT", {"default": 512, "min": 1}),
-                "sampler_name": ("STRING", {"default": ""}),
             }
         }
     
