@@ -1,0 +1,5 @@
+# ComfyUI Manual Metadata Plugin Requirements
+# These are typically already available in ComfyUI, but listed here for reference
+# Pillow is used for image processing and metadata embedding
+Pillow>=9.0.0
+
