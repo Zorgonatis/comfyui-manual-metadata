@@ -118,16 +118,16 @@ class ManualMetadataEnhancer:
                 "sampler": ("SAMPLER",),
                 "positive_conditioning": ("CONDITIONING",),
                 "negative_conditioning": ("CONDITIONING",),
-                "positive_prompt": ("STRING", {"default": "", "multiline": True}),
-                "negative_prompt": ("STRING", {"default": "", "multiline": True}),
+                "positive_prompt": ("STRING", {"default": "", "multiline": True, "placeholder": "Leave blank if using CONDITIONING inputs"}),
+                "negative_prompt": ("STRING", {"default": "", "multiline": True, "placeholder": "Leave blank if using CONDITIONING inputs"}),
                 "seed": ("INT", {"default": -1, "min": -1, "max": 0xffffffffffffffff}),
-                "scheduler": ("STRING", {"default": ""}),
-                "sampler_name": ("STRING", {"default": ""}),
-                "steps": ("INT", {"default": 0, "min": 0, "max": 1000}),
+                "scheduler": ("STRING", {"default": "", "tooltip": "Automatically detected from SAMPLER input if left blank"}),
+                "sampler_name": ("STRING", {"default": "", "tooltip": "Automatically detected from SAMPLER input if left blank"}),
+                "steps": ("INT", {"default": -1, "min": -1, "max": 1000, "tooltip": "Automatically detected from SAMPLER input if set to -1"}),
                 "model_name": ("STRING", {"default": ""}),
                 "cfg_scale": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 30.0}),
-                "width": ("INT", {"default": 0, "min": 0}),
-                "height": ("INT", {"default": 0, "min": 0}),
+                "width": ("INT", {"default": -1, "min": -1, "tooltip": "Automatically detected from image dimensions if set to -1"}),
+                "height": ("INT", {"default": -1, "min": -1, "tooltip": "Automatically detected from image dimensions if set to -1"}),
             }
         }
     
@@ -137,7 +137,7 @@ class ManualMetadataEnhancer:
     
     def enhance_metadata(self, image, model=None, sampler=None, positive_conditioning=None, negative_conditioning=None, 
                         positive_prompt="", negative_prompt="", seed=-1, scheduler="", sampler_name="", 
-                        steps=0, model_name="", cfg_scale=0.0, width=0, height=0):
+                        steps=-1, model_name="", cfg_scale=0.0, width=-1, height=-1):
         """
         Add metadata to the image. The metadata will be embedded in the image
         using PNG metadata format, which should be preserved when SaveImage saves it.
@@ -200,9 +200,9 @@ class ManualMetadataEnhancer:
                 metadata["sampler"] = final_sampler_name
                 metadata["sampler_name"] = final_sampler_name
             
-            # Use manual steps if provided (> 0), otherwise use auto-detected
-            final_steps = steps if steps > 0 else (auto_steps if auto_steps else 0)
-            if final_steps and final_steps > 0:
+            # Use manual steps if provided (> -1), otherwise use auto-detected
+            final_steps = steps if steps >= 0 else (auto_steps if auto_steps else -1)
+            if final_steps and final_steps >= 0:
                 metadata["steps"] = str(final_steps)
             
             # Extract model name from MODEL input if provided, otherwise use string input
@@ -220,14 +220,14 @@ class ManualMetadataEnhancer:
             if cfg_scale and cfg_scale > 0:
                 metadata["cfg_scale"] = str(cfg_scale)
             
-            # Use manual width if provided (> 0), otherwise use auto-detected
-            final_width = width if width > 0 else (auto_width if auto_width else 0)
-            if final_width and final_width > 0:
+            # Use manual width if provided (>= 0), otherwise use auto-detected
+            final_width = width if width >= 0 else (auto_width if auto_width else -1)
+            if final_width and final_width >= 0:
                 metadata["width"] = str(final_width)
             
-            # Use manual height if provided (> 0), otherwise use auto-detected
-            final_height = height if height > 0 else (auto_height if auto_height else 0)
-            if final_height and final_height > 0:
+            # Use manual height if provided (>= 0), otherwise use auto-detected
+            final_height = height if height >= 0 else (auto_height if auto_height else -1)
+            if final_height and final_height >= 0:
                 metadata["height"] = str(final_height)
             
             # Create workflow parameters dictionary for ComfyUI compatibility
@@ -308,15 +308,15 @@ class ManualSaveImage:
                 "sampler": ("SAMPLER",),
                 "positive_conditioning": ("CONDITIONING",),
                 "negative_conditioning": ("CONDITIONING",),
-                "positive_prompt": ("STRING", {"default": "", "multiline": True}),
-                "negative_prompt": ("STRING", {"default": "", "multiline": True}),
+                "positive_prompt": ("STRING", {"default": "", "multiline": True, "placeholder": "Leave blank if using CONDITIONING inputs"}),
+                "negative_prompt": ("STRING", {"default": "", "multiline": True, "placeholder": "Leave blank if using CONDITIONING inputs"}),
                 "seed": ("INT", {"default": -1, "min": -1, "max": 0xffffffffffffffff}),
-                "scheduler": ("STRING", {"default": ""}),
-                "sampler_name": ("STRING", {"default": ""}),
-                "steps": ("INT", {"default": 0, "min": 0, "max": 1000}),
+                "scheduler": ("STRING", {"default": "", "tooltip": "Automatically detected from SAMPLER input if left blank"}),
+                "sampler_name": ("STRING", {"default": "", "tooltip": "Automatically detected from SAMPLER input if left blank"}),
+                "steps": ("INT", {"default": -1, "min": -1, "max": 1000, "tooltip": "Automatically detected from SAMPLER input if set to -1"}),
                 "cfg_scale": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 30.0}),
-                "width": ("INT", {"default": 0, "min": 0}),
-                "height": ("INT", {"default": 0, "min": 0}),
+                "width": ("INT", {"default": -1, "min": -1, "tooltip": "Automatically detected from image dimensions if set to -1"}),
+                "height": ("INT", {"default": -1, "min": -1, "tooltip": "Automatically detected from image dimensions if set to -1"}),
             }
         }
     
@@ -327,7 +327,7 @@ class ManualSaveImage:
     
     def save_images(self, images, filename_prefix="ComfyUI", model=None, sampler=None, positive_conditioning=None, 
                    negative_conditioning=None, positive_prompt="", negative_prompt="", seed=-1, 
-                   scheduler="", sampler_name="", steps=0, cfg_scale=0.0, width=0, height=0):
+                   scheduler="", sampler_name="", steps=-1, cfg_scale=0.0, width=-1, height=-1):
         """
         Save images with manually specified metadata.
         """
@@ -398,9 +398,9 @@ class ManualSaveImage:
                 metadata.add_text("sampler", final_sampler_name)
                 metadata.add_text("sampler_name", final_sampler_name)
             
-            # Use manual steps if provided (> 0), otherwise use auto-detected
-            final_steps = steps if steps > 0 else (auto_steps if auto_steps else 0)
-            if final_steps and final_steps > 0:
+            # Use manual steps if provided (>= 0), otherwise use auto-detected
+            final_steps = steps if steps >= 0 else (auto_steps if auto_steps else -1)
+            if final_steps and final_steps >= 0:
                 metadata.add_text("steps", str(final_steps))
             
             # Extract model name from MODEL input if provided
@@ -418,14 +418,14 @@ class ManualSaveImage:
             if cfg_scale and cfg_scale > 0:
                 metadata.add_text("cfg_scale", str(cfg_scale))
             
-            # Use manual width if provided (> 0), otherwise use auto-detected
-            final_width = width if width > 0 else (auto_width if auto_width else 0)
-            if final_width and final_width > 0:
+            # Use manual width if provided (>= 0), otherwise use auto-detected
+            final_width = width if width >= 0 else (auto_width if auto_width else -1)
+            if final_width and final_width >= 0:
                 metadata.add_text("width", str(final_width))
             
-            # Use manual height if provided (> 0), otherwise use auto-detected
-            final_height = height if height > 0 else (auto_height if auto_height else 0)
-            if final_height and final_height > 0:
+            # Use manual height if provided (>= 0), otherwise use auto-detected
+            final_height = height if height >= 0 else (auto_height if auto_height else -1)
+            if final_height and final_height >= 0:
                 metadata.add_text("height", str(final_height))
             
             # Add workflow parameters for ComfyUI compatibility
@@ -438,15 +438,15 @@ class ManualSaveImage:
                 workflow_params["seed"] = seed
             if final_scheduler:
                 workflow_params["scheduler"] = final_scheduler
-            if final_steps and final_steps > 0:
+            if final_steps and final_steps >= 0:
                 workflow_params["steps"] = final_steps
             if final_model_name:
                 workflow_params["model"] = final_model_name
             if cfg_scale and cfg_scale > 0:
                 workflow_params["cfg"] = cfg_scale
-            if final_width and final_width > 0:
+            if final_width and final_width >= 0:
                 workflow_params["width"] = final_width
-            if final_height and final_height > 0:
+            if final_height and final_height >= 0:
                 workflow_params["height"] = final_height
             if final_sampler_name:
                 workflow_params["sampler_name"] = final_sampler_name
