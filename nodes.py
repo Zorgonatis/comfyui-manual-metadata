@@ -4,6 +4,46 @@ from PIL import Image, PngImagePlugin
 import folder_paths
 
 
+def get_model_name(model):
+    """Extract model name from MODEL type object."""
+    if model is None:
+        return ""
+    # Try to get model name from various possible attributes
+    if hasattr(model, 'model_path'):
+        return os.path.basename(model.model_path) if model.model_path else ""
+    if hasattr(model, 'model_file'):
+        return os.path.basename(model.model_file) if model.model_file else ""
+    if hasattr(model, 'name'):
+        return model.name if model.name else ""
+    # Last resort: try to get from any path-like attribute
+    for attr in ['path', 'filename', 'file_path', 'checkpoint_path']:
+        if hasattr(model, attr):
+            path = getattr(model, attr, None)
+            if path:
+                return os.path.basename(path)
+    return ""
+
+
+def get_clip_name(clip):
+    """Extract CLIP model name from CLIP type object."""
+    if clip is None:
+        return ""
+    # Try to get CLIP name from various possible attributes
+    if hasattr(clip, 'model_path'):
+        return os.path.basename(clip.model_path) if clip.model_path else ""
+    if hasattr(clip, 'clip_path'):
+        return os.path.basename(clip.clip_path) if clip.clip_path else ""
+    if hasattr(clip, 'name'):
+        return clip.name if clip.name else ""
+    # Last resort: try to get from any path-like attribute
+    for attr in ['path', 'filename', 'file_path']:
+        if hasattr(clip, attr):
+            path = getattr(clip, attr, None)
+            if path:
+                return os.path.basename(path)
+    return ""
+
+
 class ManualMetadataEnhancer:
     """
     Node that adds metadata to an image to enhance/override SaveImage node metadata.
@@ -17,6 +57,8 @@ class ManualMetadataEnhancer:
                 "image": ("IMAGE",),
             },
             "optional": {
+                "model": ("MODEL",),
+                "clip": ("CLIP",),
                 "positive_prompt": ("STRING", {"default": "", "multiline": True}),
                 "negative_prompt": ("STRING", {"default": "", "multiline": True}),
                 "seed": ("INT", {"default": -1, "min": -1, "max": 0xffffffffffffffff}),
@@ -34,7 +76,7 @@ class ManualMetadataEnhancer:
     FUNCTION = "enhance_metadata"
     CATEGORY = "image/manual_metadata"
     
-    def enhance_metadata(self, image, positive_prompt="", negative_prompt="", seed=-1, 
+    def enhance_metadata(self, image, model=None, clip=None, positive_prompt="", negative_prompt="", seed=-1, 
                         scheduler="", steps=20, model_name="", cfg_scale=7.0, 
                         width=512, height=512, sampler_name=""):
         """
@@ -75,9 +117,20 @@ class ManualMetadataEnhancer:
             if steps:
                 metadata["steps"] = str(steps)
             
-            if model_name:
-                metadata["model"] = model_name
-                metadata["model_name"] = model_name
+            # Extract model name from MODEL input if provided, otherwise use string input
+            final_model_name = model_name
+            if model is not None:
+                extracted_name = get_model_name(model)
+                if extracted_name:
+                    final_model_name = extracted_name
+            if clip is not None:
+                extracted_clip_name = get_clip_name(clip)
+                if extracted_clip_name and not final_model_name:
+                    final_model_name = extracted_clip_name
+            
+            if final_model_name:
+                metadata["model"] = final_model_name
+                metadata["model_name"] = final_model_name
             
             if cfg_scale:
                 metadata["cfg_scale"] = str(cfg_scale)
@@ -104,8 +157,8 @@ class ManualMetadataEnhancer:
                 workflow_params["scheduler"] = scheduler
             if steps:
                 workflow_params["steps"] = steps
-            if model_name:
-                workflow_params["model"] = model_name
+            if final_model_name:
+                workflow_params["model"] = final_model_name
             if cfg_scale:
                 workflow_params["cfg"] = cfg_scale
             if width:
@@ -166,6 +219,8 @@ class ManualSaveImage:
                 "filename_prefix": ("STRING", {"default": "ComfyUI"}),
             },
             "optional": {
+                "model": ("MODEL",),
+                "clip": ("CLIP",),
                 "positive_prompt": ("STRING", {"default": "", "multiline": True}),
                 "negative_prompt": ("STRING", {"default": "", "multiline": True}),
                 "seed": ("INT", {"default": -1, "min": -1, "max": 0xffffffffffffffff}),
@@ -184,8 +239,8 @@ class ManualSaveImage:
     OUTPUT_NODE = True
     CATEGORY = "image/manual_metadata"
     
-    def save_images(self, images, filename_prefix="ComfyUI", positive_prompt="", 
-                   negative_prompt="", seed=-1, scheduler="", steps=20, 
+    def save_images(self, images, filename_prefix="ComfyUI", model=None, clip=None, 
+                   positive_prompt="", negative_prompt="", seed=-1, scheduler="", steps=20, 
                    model_name="", cfg_scale=7.0, width=512, height=512, sampler_name=""):
         """
         Save images with manually specified metadata.
@@ -233,9 +288,20 @@ class ManualSaveImage:
             if steps:
                 metadata.add_text("steps", str(steps))
             
-            if model_name:
-                metadata.add_text("model", model_name)
-                metadata.add_text("model_name", model_name)
+            # Extract model name from MODEL input if provided, otherwise use string input
+            final_model_name = model_name
+            if model is not None:
+                extracted_name = get_model_name(model)
+                if extracted_name:
+                    final_model_name = extracted_name
+            if clip is not None:
+                extracted_clip_name = get_clip_name(clip)
+                if extracted_clip_name and not final_model_name:
+                    final_model_name = extracted_clip_name
+            
+            if final_model_name:
+                metadata.add_text("model", final_model_name)
+                metadata.add_text("model_name", final_model_name)
             
             if cfg_scale:
                 metadata.add_text("cfg_scale", str(cfg_scale))
@@ -262,8 +328,8 @@ class ManualSaveImage:
                 workflow_params["scheduler"] = scheduler
             if steps:
                 workflow_params["steps"] = steps
-            if model_name:
-                workflow_params["model"] = model_name
+            if final_model_name:
+                workflow_params["model"] = final_model_name
             if cfg_scale:
                 workflow_params["cfg"] = cfg_scale
             if width:

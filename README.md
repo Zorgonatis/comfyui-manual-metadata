@@ -4,15 +4,15 @@ A ComfyUI plugin that allows manual input and override of image metadata includi
 
 ## Features
 
-- **Manual Metadata Enhancer**: A node that adds metadata to images before they reach the native SaveImage node, allowing you to enhance or override automatic metadata
-- **Manual Save Image**: A drop-in replacement for SaveImage with additional metadata input fields for complete control over saved image metadata
+- **Manual Save Image**: A drop-in replacement for SaveImage that directly overrides metadata collection - just connect MODEL and/or CLIP inputs and your metadata will be automatically extracted and saved
+- **Manual Metadata Enhancer**: (Optional) A node that adds metadata to images before they reach the native SaveImage node - only needed if you want to use the native SaveImage instead of Manual Save Image
 
 ## Installation
 
 1. Clone or download this repository into your ComfyUI `custom_nodes` directory:
    ```
    cd ComfyUI/custom_nodes
-   git clone https://github.com/Zorgonatis/comfyui-manual-metadata comfyui-manual-metadata
+   git clone https://github.com/Zorgonatis/comfyui-manual-metadata.git
    ```
 
 2. Restart ComfyUI
@@ -30,38 +30,44 @@ This node adds metadata to an image that will be embedded in the image data. Not
 To use this node:
 
 1. Connect your image output to the `image` input of the Manual Metadata Enhancer node
-2. Fill in any metadata fields you want to add or override:
+2. Connect MODEL and/or CLIP inputs (optional) - model names will be automatically extracted
+3. Fill in any metadata fields you want to add or override:
+   - **model**: (MODEL type) Connect your model here to automatically extract model name
+   - **clip**: (CLIP type) Connect your CLIP model here to automatically extract CLIP model name
    - **positive_prompt**: The positive prompt used for generation
    - **negative_prompt**: The negative prompt used for generation
    - **seed**: The random seed value
    - **scheduler**: The scheduler name (e.g., "normal", "karras", etc.)
    - **steps**: Number of inference steps
-   - **model_name**: Name of the model used
+   - **model_name**: (Optional override) Manual model name string (overridden by MODEL/CLIP inputs if provided)
    - **cfg_scale**: CFG scale value
    - **width**: Image width
    - **height**: Image height
    - **sampler_name**: Name of the sampler used
-3. Connect the output to your SaveImage node
-4. The metadata will be embedded in the image format
+4. Connect the output to your SaveImage node
+5. The metadata will be embedded in the image format
 
 ### Manual Save Image Node
 
-This is a drop-in replacement for SaveImage with additional metadata inputs:
+This is a drop-in replacement for SaveImage that directly overrides metadata collection. **You don't need to pass images through an enhancer node** - this node handles everything:
 
 1. Connect your image output to the `images` input
 2. Set the `filename_prefix` (default: "ComfyUI")
-3. Optionally fill in any metadata fields:
-   - **positive_prompt**: The positive prompt used for generation
-   - **negative_prompt**: The negative prompt used for generation
+3. **Connect MODEL and/or CLIP inputs** (optional) - model names will be automatically extracted
+4. Optionally fill in any metadata fields (or leave them empty):
+   - **model**: (MODEL type) Connect your model here to automatically extract model name
+   - **clip**: (CLIP type) Connect your CLIP model here to automatically extract CLIP model name
+   - **positive_prompt**: The positive prompt used for generation (string)
+   - **negative_prompt**: The negative prompt used for generation (string)
    - **seed**: The random seed value
    - **scheduler**: The scheduler name
    - **steps**: Number of inference steps
-   - **model_name**: Name of the model used
+   - **model_name**: (Optional override) Manual model name string (overridden by MODEL/CLIP inputs if provided)
    - **cfg_scale**: CFG scale value
    - **width**: Image width
    - **height**: Image height
    - **sampler_name**: Name of the sampler used
-4. The image will be saved with all specified metadata embedded
+5. The image will be saved with all specified metadata embedded. MODEL/CLIP inputs will automatically extract model names.
 
 ## Metadata Fields
 
@@ -86,6 +92,13 @@ All metadata fields are optional. Empty strings or default values will be ignore
 - **External Generation**: When images are generated outside of ComfyUI but you want to add metadata
 - **Metadata Enhancement**: When you want to add additional metadata that isn't automatically captured
 - **Workflow Documentation**: When you want to ensure specific metadata is always saved with images
+- **Automatic Model Name Extraction**: Connect MODEL/CLIP inputs to automatically extract and save model names without manual entry
+
+## About the Two Nodes
+
+- **Manual Save Image**: This is the recommended node for most use cases. It directly overrides SaveImage's metadata collection, so you don't need to pass images through an enhancer node. Just connect your MODEL/CLIP inputs and the metadata will be automatically extracted and saved.
+
+- **Manual Metadata Enhancer**: This node is only useful if you specifically want to use ComfyUI's native SaveImage node instead of Manual Save Image. Due to how SaveImage reads metadata from workflow context rather than embedded image data, the enhancer may not always work perfectly with the native SaveImage. For guaranteed results, use Manual Save Image instead.
 
 ## Notes
 
