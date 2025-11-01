@@ -24,23 +24,27 @@ def get_model_name(model):
     return ""
 
 
-def get_clip_name(clip):
-    """Extract CLIP model name from CLIP type object."""
-    if clip is None:
+def get_prompt_from_conditioning(conditioning):
+    """Try to extract prompt text from CONDITIONING type object."""
+    if conditioning is None:
         return ""
-    # Try to get CLIP name from various possible attributes
-    if hasattr(clip, 'model_path'):
-        return os.path.basename(clip.model_path) if clip.model_path else ""
-    if hasattr(clip, 'clip_path'):
-        return os.path.basename(clip.clip_path) if clip.clip_path else ""
-    if hasattr(clip, 'name'):
-        return clip.name if clip.name else ""
-    # Last resort: try to get from any path-like attribute
-    for attr in ['path', 'filename', 'file_path']:
-        if hasattr(clip, attr):
-            path = getattr(clip, attr, None)
-            if path:
-                return os.path.basename(path)
+    # CONDITIONING is typically a list of tuples or dicts
+    # Try to find prompt text in various possible locations
+    if isinstance(conditioning, (list, tuple)):
+        for item in conditioning:
+            if isinstance(item, dict):
+                # Check common locations for prompt text
+                for key in ['prompt', 'text', 'positive', 'negative', 'conditioning_prompt']:
+                    if key in item and isinstance(item[key], str):
+                        return item[key]
+                # Check nested structures
+                if 'pooled_output' in item or 'conditioning' in item:
+                    # Look for text in nested dict
+                    nested = item.get('pooled_output') or item.get('conditioning')
+                    if isinstance(nested, dict):
+                        for key in ['prompt', 'text', 'positive', 'negative']:
+                            if key in nested and isinstance(nested[key], str):
+                                return nested[key]
     return ""
 
 
@@ -58,17 +62,18 @@ class ManualMetadataEnhancer:
             },
             "optional": {
                 "model": ("MODEL",),
-                "clip": ("CLIP",),
+                "positive_conditioning": ("CONDITIONING",),
+                "negative_conditioning": ("CONDITIONING",),
                 "positive_prompt": ("STRING", {"default": "", "multiline": True}),
                 "negative_prompt": ("STRING", {"default": "", "multiline": True}),
                 "seed": ("INT", {"default": -1, "min": -1, "max": 0xffffffffffffffff}),
                 "scheduler": ("STRING", {"default": ""}),
+                "sampler_name": ("STRING", {"default": ""}),
                 "steps": ("INT", {"default": 20, "min": 1, "max": 1000}),
                 "model_name": ("STRING", {"default": ""}),
                 "cfg_scale": ("FLOAT", {"default": 7.0, "min": 0.0, "max": 30.0}),
                 "width": ("INT", {"default": 512, "min": 1}),
                 "height": ("INT", {"default": 512, "min": 1}),
-                "sampler_name": ("STRING", {"default": ""}),
             }
         }
     
@@ -76,9 +81,9 @@ class ManualMetadataEnhancer:
     FUNCTION = "enhance_metadata"
     CATEGORY = "image/manual_metadata"
     
-    def enhance_metadata(self, image, model=None, clip=None, positive_prompt="", negative_prompt="", seed=-1, 
-                        scheduler="", steps=20, model_name="", cfg_scale=7.0, 
-                        width=512, height=512, sampler_name=""):
+    def enhance_metadata(self, image, model=None, positive_conditioning=None, negative_conditioning=None, 
+                        positive_prompt="", negative_prompt="", seed=-1, scheduler="", sampler_name="", 
+                        steps=20, model_name="", cfg_scale=7.0, width=512, height=512):
         """
         Add metadata to the image. The metadata will be embedded in the image
         using PNG metadata format, which should be preserved when SaveImage saves it.
@@ -101,18 +106,35 @@ class ManualMetadataEnhancer:
             # Create metadata dictionary
             metadata = {}
             
-            if positive_prompt:
-                metadata["positive_prompt"] = positive_prompt
-                metadata["prompt"] = positive_prompt
+            # Extract prompts from CONDITIONING if provided, otherwise use string inputs
+            final_positive_prompt = positive_prompt
+            if positive_conditioning is not None:
+                extracted_positive = get_prompt_from_conditioning(positive_conditioning)
+                if extracted_positive:
+                    final_positive_prompt = extracted_positive
             
-            if negative_prompt:
-                metadata["negative_prompt"] = negative_prompt
+            final_negative_prompt = negative_prompt
+            if negative_conditioning is not None:
+                extracted_negative = get_prompt_from_conditioning(negative_conditioning)
+                if extracted_negative:
+                    final_negative_prompt = extracted_negative
+            
+            if final_positive_prompt:
+                metadata["positive_prompt"] = final_positive_prompt
+                metadata["prompt"] = final_positive_prompt
+            
+            if final_negative_prompt:
+                metadata["negative_prompt"] = final_negative_prompt
             
             if seed != -1:
                 metadata["seed"] = str(seed)
             
             if scheduler:
                 metadata["scheduler"] = scheduler
+            
+            if sampler_name:
+                metadata["sampler"] = sampler_name
+                metadata["sampler_name"] = sampler_name
             
             if steps:
                 metadata["steps"] = str(steps)
@@ -123,10 +145,6 @@ class ManualMetadataEnhancer:
                 extracted_name = get_model_name(model)
                 if extracted_name:
                     final_model_name = extracted_name
-            if clip is not None:
-                extracted_clip_name = get_clip_name(clip)
-                if extracted_clip_name and not final_model_name:
-                    final_model_name = extracted_clip_name
             
             if final_model_name:
                 metadata["model"] = final_model_name
@@ -141,16 +159,12 @@ class ManualMetadataEnhancer:
             if height:
                 metadata["height"] = str(height)
             
-            if sampler_name:
-                metadata["sampler"] = sampler_name
-                metadata["sampler_name"] = sampler_name
-            
             # Create workflow parameters dictionary for ComfyUI compatibility
             workflow_params = {}
-            if positive_prompt:
-                workflow_params["positive"] = positive_prompt
-            if negative_prompt:
-                workflow_params["negative"] = negative_prompt
+            if final_positive_prompt:
+                workflow_params["positive"] = final_positive_prompt
+            if final_negative_prompt:
+                workflow_params["negative"] = final_negative_prompt
             if seed != -1:
                 workflow_params["seed"] = seed
             if scheduler:
@@ -239,9 +253,9 @@ class ManualSaveImage:
     OUTPUT_NODE = True
     CATEGORY = "image/manual_metadata"
     
-    def save_images(self, images, filename_prefix="ComfyUI", model=None, clip=None, 
-                   positive_prompt="", negative_prompt="", seed=-1, scheduler="", steps=20, 
-                   model_name="", cfg_scale=7.0, width=512, height=512, sampler_name=""):
+    def save_images(self, images, filename_prefix="ComfyUI", model=None, positive_conditioning=None, 
+                   negative_conditioning=None, positive_prompt="", negative_prompt="", seed=-1, 
+                   scheduler="", sampler_name="", steps=20, cfg_scale=7.0, width=512, height=512):
         """
         Save images with manually specified metadata.
         """
@@ -271,13 +285,26 @@ class ManualSaveImage:
             # Create metadata
             metadata = PngImagePlugin.PngInfo()
             
-            # Add standard metadata fields
-            if positive_prompt:
-                metadata.add_text("prompt", positive_prompt)
-                metadata.add_text("positive_prompt", positive_prompt)
+            # Extract prompts from CONDITIONING if provided, otherwise use string inputs
+            final_positive_prompt = positive_prompt
+            if positive_conditioning is not None:
+                extracted_positive = get_prompt_from_conditioning(positive_conditioning)
+                if extracted_positive:
+                    final_positive_prompt = extracted_positive
             
-            if negative_prompt:
-                metadata.add_text("negative_prompt", negative_prompt)
+            final_negative_prompt = negative_prompt
+            if negative_conditioning is not None:
+                extracted_negative = get_prompt_from_conditioning(negative_conditioning)
+                if extracted_negative:
+                    final_negative_prompt = extracted_negative
+            
+            # Add standard metadata fields
+            if final_positive_prompt:
+                metadata.add_text("prompt", final_positive_prompt)
+                metadata.add_text("positive_prompt", final_positive_prompt)
+            
+            if final_negative_prompt:
+                metadata.add_text("negative_prompt", final_negative_prompt)
             
             if seed != -1:
                 metadata.add_text("seed", str(seed))
@@ -285,19 +312,19 @@ class ManualSaveImage:
             if scheduler:
                 metadata.add_text("scheduler", scheduler)
             
+            if sampler_name:
+                metadata.add_text("sampler", sampler_name)
+                metadata.add_text("sampler_name", sampler_name)
+            
             if steps:
                 metadata.add_text("steps", str(steps))
             
-            # Extract model name from MODEL input if provided, otherwise use string input
-            final_model_name = model_name
+            # Extract model name from MODEL input if provided
+            final_model_name = ""
             if model is not None:
                 extracted_name = get_model_name(model)
                 if extracted_name:
                     final_model_name = extracted_name
-            if clip is not None:
-                extracted_clip_name = get_clip_name(clip)
-                if extracted_clip_name and not final_model_name:
-                    final_model_name = extracted_clip_name
             
             if final_model_name:
                 metadata.add_text("model", final_model_name)
@@ -312,16 +339,12 @@ class ManualSaveImage:
             if height:
                 metadata.add_text("height", str(height))
             
-            if sampler_name:
-                metadata.add_text("sampler", sampler_name)
-                metadata.add_text("sampler_name", sampler_name)
-            
             # Add workflow parameters for ComfyUI compatibility
             workflow_params = {}
-            if positive_prompt:
-                workflow_params["positive"] = positive_prompt
-            if negative_prompt:
-                workflow_params["negative"] = negative_prompt
+            if final_positive_prompt:
+                workflow_params["positive"] = final_positive_prompt
+            if final_negative_prompt:
+                workflow_params["negative"] = final_negative_prompt
             if seed != -1:
                 workflow_params["seed"] = seed
             if scheduler:
