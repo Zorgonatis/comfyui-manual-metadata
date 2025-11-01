@@ -12,7 +12,7 @@ A ComfyUI plugin that allows manual input and override of image metadata includi
 1. Clone or download this repository into your ComfyUI `custom_nodes` directory:
    ```
    cd ComfyUI/custom_nodes
-   git clone <repository-url> comfyui-manual-metadata
+   git clone https://github.com/Zorgonatis/comfyui-manual-metadata comfyui-manual-metadata
    ```
 
 2. Restart ComfyUI
